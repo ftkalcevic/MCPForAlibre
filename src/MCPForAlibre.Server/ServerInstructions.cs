@@ -26,6 +26,8 @@ static class ServerInstructions
         - Construction figures and line end points have no IDs; refer to a line's ends as "ID.start" and "ID.end".
         - An assembly can only insert parts and assemblies that have been saved: save a new part first with save_session and a folder.
         - Moving an occurrence that constraints hold may not take effect.
+        - Motion constraints (gear, rack, screw) only couple movement: first hold the parts with align or mate (a screw's two axes must be in line, or it errors). A fastener needs matching geometry, such as a pin's circular edge and a hole's of the same size.
+        - A constraint's limit (atLeast, atMost) isn't reliably reported back by Alibre; list_assembly_constraints shows a limit only when Alibre reports one.
 
         Timing
         - If Alibre isn't running, the first call starts it and waits for it to load, which can take 15 to 60 seconds. If a call times out meanwhile, call again.

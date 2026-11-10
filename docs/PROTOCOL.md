@@ -90,7 +90,9 @@ Occurrences are named by their path from the top (`assembly_tree`'s `path`): chi
 | `occurrence_info` | `session`, `occurrence` | `name`, `path`, `kind`, `design`, `filePath`, `hidden`, `suppressed`, `anchored`, `position`, `rotation`, `min`, `max` |
 | `move_occurrence` | `session`, `occurrence`, `x y z rx ry rz` (absent ones kept), `relative` | occurrence info |
 | `set_occurrence` | `session`, `occurrence`, `hidden`, `suppressed`, `anchored` | occurrence info |
-| `add_assembly_constraint` | `session`, `type` (mate, align, orient, angle, tangentInside, tangentOutside, gear), `first` and `second` (`{occurrence, face \| edge \| plane \| axis \| point}`), `value` (mm, or degrees for angle), `reversed`, `name`, `ratio1` and `ratio2` (gear only, default 1; added with `AddConstraintEx`, trying bound types equality, logical, unknown in turn) | `name`, `type`, `suppressed`, `hasError`, `participants`, and `ratio1`, `ratio2` for gear |
+| `add_assembly_constraint` | `session`, `type` (mate, align, orient, angle, tangentInside, tangentOutside, gear, rack, screw, fastener), `first` and `second` (`{occurrence, face \| edge \| plane \| axis \| point}`), `value` (mm or degrees; rack: pinion radius; screw: pitch; fastener: offset; with a limit, the least or most), `value2` (the most, for between), `limit` (fixed, atLeast, atMost, between), `reversed`, `name`, `ratio1` and `ratio2` (gear) | `name`, `type`, `suppressed`, `hasError`, `participants`, `limit` (only atLeast, atMost or between, as Alibre reports it), and `ratio1`, `ratio2` (gear), `pinionRadiusMm` (rack), `pitchMm` (screw), `offsetMm`, `minimumOffsetMm`, `maximumOffsetMm` (fastener) |
+
+Gear, rack, screw, fastener and any limit go through `AddConstraintEx`: with a limit, its own bound type; otherwise equality, then logical, then unknown, logged.
 | `list_assembly_constraints` | `session` | constraints as above |
 | `suppress_assembly_constraint` | `session`, `constraint`, `suppressed` | the constraint |
 | `delete_assembly_constraint` | `session`, `constraint` | `deleted` |

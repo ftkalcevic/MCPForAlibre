@@ -269,34 +269,51 @@ namespace MCPForAlibre.AddOn
                 ["tangentInside"] = ADAssemblyConstraintType.AD_TANGENT_INSIDE_TYPE,
                 ["tangentOutside"] = ADAssemblyConstraintType.AD_TANGENT_OUTSIDE_TYPE,
                 ["gear"] = ADAssemblyConstraintType.AD_GEAR_TYPE,
+                ["rack"] = ADAssemblyConstraintType.AD_RACK_TYPE,
+                ["screw"] = ADAssemblyConstraintType.AD_SCREW_TYPE,
+                ["fastener"] = ADAssemblyConstraintType.AD_FASTENER_TYPE,
             };
 
-        // A gear constraint couples two rotations by ratio1 : ratio2 (two parameters, so AddConstraintEx).
-        // The bound type it wants isn't documented for 27.0.1: equality first, then the others, and the
-        // one that worked is logged.
-        static IADAssemblyConstraint AddGearConstraint(IADAssemblySession assembly, IADTargetProxy first, IADTargetProxy second,
-                                                       double ratio1, double ratio2, bool reversed, string name,
-                                                       string parameterName, string parameter2Name)
-        {
-            var bounds = new[]
+        // How far a constraint's value holds: exactly (the default), at least, at most, or between value and value2.
+        static readonly Dictionary<string, ADAssemblyConstraintBoundType> s_limits =
+            new Dictionary<string, ADAssemblyConstraintBoundType>(StringComparer.OrdinalIgnoreCase)
             {
-                ADAssemblyConstraintBoundType.AD_EQUALITY_TYPE,
-                ADAssemblyConstraintBoundType.AD_LOGICAL_TYPE,
-                ADAssemblyConstraintBoundType.AD_UNKNOWN_TYPE,
+                ["fixed"] = ADAssemblyConstraintBoundType.AD_EQUALITY_TYPE,
+                ["atLeast"] = ADAssemblyConstraintBoundType.AD_GREATER_THAN_EQUAL_TYPE,
+                ["atMost"] = ADAssemblyConstraintBoundType.AD_LESS_THAN_EQUAL_TYPE,
+                ["between"] = ADAssemblyConstraintBoundType.AD_BOUNDED_TYPE,
             };
+
+        // A constraint through AddConstraintEx: gear (ratio1 : ratio2), rack (pinion radius), screw (pitch),
+        // fastener (offset), and any type with a limit. With no limit given, the bound type isn't documented
+        // for 27.0.1: equality first (which gear took), then logical, then unknown, and the one that worked
+        // is logged. A limit asks for its own bound type only.
+        static IADAssemblyConstraint AddConstraintEx(IADAssemblySession assembly, IADTargetProxy first, IADTargetProxy second,
+                                                     ADAssemblyConstraintType type, ADAssemblyConstraintBoundType? limit,
+                                                     object value1, object value2, bool reversed, string name,
+                                                     string parameterName, string parameter2Name)
+        {
+            var bounds = limit.HasValue
+                ? new[] { limit.Value }
+                : new[]
+                {
+                    ADAssemblyConstraintBoundType.AD_EQUALITY_TYPE,
+                    ADAssemblyConstraintBoundType.AD_LOGICAL_TYPE,
+                    ADAssemblyConstraintBoundType.AD_UNKNOWN_TYPE,
+                };
             COMException last = null;
             foreach (var bound in bounds)
             {
                 try
                 {
-                    var c = assembly.AssemblyConstraints.AddConstraintEx(first, second, ADAssemblyConstraintType.AD_GEAR_TYPE, bound,
-                                                                         ratio1, ratio2, reversed, name, parameterName, parameter2Name);
-                    Log.Write("constraint", "gear constraint added with bound type " + bound);
+                    var c = assembly.AssemblyConstraints.AddConstraintEx(first, second, type, bound,
+                                                                         value1, value2, reversed, name, parameterName, parameter2Name);
+                    Log.Write("constraint", EnumName(type) + " added with bound type " + bound);
                     return c;
                 }
                 catch (COMException e)
                 {
-                    Log.Write("constraint", "gear constraint with bound type " + bound + " refused: 0x" + e.HResult.ToString("X8") + " " + e.Message);
+                    Log.Write("constraint", EnumName(type) + " with bound type " + bound + " refused: 0x" + e.HResult.ToString("X8") + " " + e.Message);
                     DeleteConstraintIfLeft(assembly, name);
                     last = e;
                 }
@@ -319,24 +336,63 @@ namespace MCPForAlibre.AddOn
             IADTargetProxy first = ConstraintTarget(assembly, args.Object("first"), "first");
             IADTargetProxy second = ConstraintTarget(assembly, args.Object("second"), "second");
             double value = args.OptionalNumber("value") ?? 0;
-            object parameter = type == ADAssemblyConstraintType.AD_ANGLE_TYPE ? Angle(value) : value * u;
+            // Lengths in mm become model units; angle's value and bounds are degrees, made radians.
+            object Measure(double v) => type == ADAssemblyConstraintType.AD_ANGLE_TYPE ? Angle(v) : v * u;
+            object parameter = Measure(value);
+            bool reversed = args.Bool("reversed", false);
+
+            ADAssemblyConstraintBoundType? limit = null;
+            string limitName = args.OptionalString("limit");
+            if (!string.IsNullOrEmpty(limitName))
+            {
+                if (!s_limits.TryGetValue(limitName, out var bound))
+                    throw new ArgumentException("Unknown limit '" + limitName + "' (" + string.Join(", ", s_limits.Keys) + ").");
+                if (bound != ADAssemblyConstraintBoundType.AD_EQUALITY_TYPE)
+                    limit = bound;
+            }
+            if (limit == ADAssemblyConstraintBoundType.AD_BOUNDED_TYPE && !args.Has("value2"))
+                throw new ArgumentException("A 'between' limit needs value (the least) and value2 (the most).");
 
             IADAssemblyConstraint constraint;
             try
             {
-                if (type == ADAssemblyConstraintType.AD_GEAR_TYPE)
+                string parameter2Name = UnusedParameterName((IADSession)assembly, "C", parameterName);
+                switch (type)
                 {
-                    double ratio1 = args.OptionalNumber("ratio1") ?? 1;
-                    double ratio2 = args.OptionalNumber("ratio2") ?? 1;
-                    if (ratio1 <= 0 || ratio2 <= 0)
-                        throw new ArgumentException("A gear constraint's ratio1 and ratio2 must be greater than 0.");
-                    string parameter2Name = UnusedParameterName((IADSession)assembly, "C", parameterName);
-                    constraint = AddGearConstraint(assembly, first, second, ratio1, ratio2, args.Bool("reversed", false),
-                                                   name, parameterName, parameter2Name);
+                    case ADAssemblyConstraintType.AD_GEAR_TYPE:
+                    {
+                        double ratio1 = args.OptionalNumber("ratio1") ?? 1;
+                        double ratio2 = args.OptionalNumber("ratio2") ?? 1;
+                        if (ratio1 <= 0 || ratio2 <= 0)
+                            throw new ArgumentException("A gear constraint's ratio1 and ratio2 must be greater than 0.");
+                        constraint = AddConstraintEx(assembly, first, second, type, limit, ratio1, ratio2, reversed,
+                                                     name, parameterName, parameter2Name);
+                        break;
+                    }
+                    case ADAssemblyConstraintType.AD_RACK_TYPE:
+                    case ADAssemblyConstraintType.AD_SCREW_TYPE:
+                        // rack: the pinion's radius; screw: the pitch (travel per turn). Both mm.
+                        if (!(value > 0))
+                            throw new ArgumentException(type == ADAssemblyConstraintType.AD_RACK_TYPE
+                                ? "A rack constraint needs value: the pinion's radius in mm."
+                                : "A screw constraint needs value: the pitch (travel per turn) in mm.");
+                        constraint = AddConstraintEx(assembly, first, second, type, limit, parameter, null, reversed,
+                                                     name, parameterName, parameter2Name);
+                        break;
+                    case ADAssemblyConstraintType.AD_FASTENER_TYPE:
+                        constraint = AddConstraintEx(assembly, first, second, type, limit, parameter,
+                                                     args.Has("value2") ? Measure(args.Number("value2")) : null, reversed,
+                                                     name, parameterName, parameter2Name);
+                        break;
+                    default:
+                        constraint = limit.HasValue
+                            ? AddConstraintEx(assembly, first, second, type, limit, parameter,
+                                              args.Has("value2") ? Measure(args.Number("value2")) : null, reversed,
+                                              name, parameterName, parameter2Name)
+                            : assembly.AssemblyConstraints.AddConstraint(first, second, type, parameter, reversed,
+                                                                         name, parameterName);
+                        break;
                 }
-                else
-                    constraint = assembly.AssemblyConstraints.AddConstraint(first, second, type, parameter, args.Bool("reversed", false),
-                                                                            name, parameterName);
             }
             catch (COMException)
             {
@@ -391,16 +447,66 @@ namespace MCPForAlibre.AddOn
                 info["participants"] = participants;
             }
             catch (COMException) { }
-            if (c is IADGearConstraint gear)
+            // Alibre reports the bound type unreliably: fixed constraints and even an atLeast one read back as
+            // unknown (proven 2026-11-10); only between read back as itself. So say a limit only when it's one.
+            try
             {
-                try
-                {
-                    info["ratio1"] = gear.Ratio1?.Value;
-                    info["ratio2"] = gear.Ratio2?.Value;
-                }
-                catch (COMException) { }
+                string limit = LimitName(c.BoundType);
+                if (limit != null)
+                    info["limit"] = limit;
             }
+            catch (COMException) { }
+            try
+            {
+                switch (c)
+                {
+                    case IADGearConstraint gear:
+                        info["ratio1"] = gear.Ratio1?.Value;
+                        info["ratio2"] = gear.Ratio2?.Value;
+                        break;
+                    case IADRackConstraint rack:
+                        info["pinionRadiusMm"] = MmOf(rack.PinionRadius, c);
+                        break;
+                    case IADScrewConstraint screw:
+                        info["pitchMm"] = MmOf(screw.Pitch, c);
+                        break;
+                    case IADFastenerConstraint fastener:
+                        info["offsetMm"] = MmOf(fastener.Offset, c);
+                        info["minimumOffsetMm"] = MmOf(fastener.MinimumOffset, c);
+                        info["maximumOffsetMm"] = MmOf(fastener.MaximumOffset, c);
+                        break;
+                }
+            }
+            catch (COMException) { }
             return info;
+        }
+
+        // atLeast, atMost or between; null for fixed, logical and unknown, which say nothing useful.
+        static string LimitName(ADAssemblyConstraintBoundType bound)
+        {
+            foreach (var pair in s_limits)
+                if (pair.Value == bound && bound != ADAssemblyConstraintBoundType.AD_EQUALITY_TYPE)
+                    return pair.Key;
+            return null;
+        }
+
+        // A length parameter of a constraint in mm, in its assembly's model units.
+        static double? MmOf(IADParameter p, IADAssemblyConstraint c)
+        {
+            if (p == null)
+                return null;
+            double mm = 10.0;
+            try
+            {
+                foreach (object part in ItemsOf(c.Participants))
+                    if (part is IADTargetProxy proxy && proxy.Occurrence?.RootAssemblySession is IADDesignSession d)
+                    {
+                        mm = MmPerUnit(d);
+                        break;
+                    }
+            }
+            catch (COMException) { }
+            return Round(p.Value * mm);
         }
 
         IADAssemblyConstraint FindConstraint(IADAssemblySession assembly, string name)

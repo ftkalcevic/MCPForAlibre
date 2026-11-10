@@ -68,19 +68,25 @@ public sealed partial class AlibreTools
             : Call("set_occurrence", new { session, occurrence, hidden, suppressed, anchored }, cancel);
 
     [McpServerTool(Name = "add_assembly_constraint")]
-    [Description("Constrain two occurrences: mate (faces against each other, normals opposed), align (faces in line, " +
-                 "or axes in line), orient (parallel), angle, tangentInside, tangentOutside, or gear (couples two " +
-                 "rotations: the sides are the two rotation axes, such as each part's design axis or a cylindrical face, " +
-                 "turning ratio1 : ratio2, such as the tooth counts; reversed flips the sense). Gear only couples " +
-                 "rotation: hold each part on its axis with align constraints first. Each side is " +
-                 "{occurrence, and one of face or edge (list_topology with that occurrence) or plane, axis or point " +
-                 "(design geometry names in its part)}; leave out occurrence for the assembly's own planes and axes.")]
+    [Description("Constrain two occurrences. Position: mate (faces against each other, normals opposed), align (faces " +
+                 "in line, or axes in line), orient (parallel), angle, tangentInside, tangentOutside. Motion, which only " +
+                 "couples movement, so hold each part in place with align or mate constraints first: gear (two rotation " +
+                 "axes, such as each part's design axis or a cylindrical face, turning ratio1 : ratio2, such as the tooth " +
+                 "counts), rack (a pinion's rotation axis and the rack's line of travel; value is the pinion's radius in mm), " +
+                 "screw (two axes; one turn moves along the axis by value, the pitch in mm). Fastener seats a fastener in " +
+                 "a hole (value is the offset in mm). Each side is {occurrence, and one of face or edge (list_topology " +
+                 "with that occurrence) or plane, axis or point (design geometry names in its part)}; leave out " +
+                 "occurrence for the assembly's own planes and axes. limit lets the value range: atLeast value, atMost " +
+                 "value, or between value and value2, such as a mate that may sit 0 to 20 mm apart.")]
     public Task<string> AddAssemblyConstraint(
-        [Description("mate, align, orient, angle, tangentInside, tangentOutside or gear.")] string type,
+        [Description("mate, align, orient, angle, tangentInside, tangentOutside, gear, rack, screw or fastener.")] string type,
         [Description("The first side.")] ConstraintSide first,
         [Description("The second side.")] ConstraintSide second,
-        [Description("Offset in mm, or the angle in degrees for angle (default 0). Not used by gear.")] double value = 0,
-        [Description("Flip the constraint's direction (for gear, which way the second turns).")] bool reversed = false,
+        [Description("Offset in mm, the angle in degrees for angle, the pinion radius for rack, the pitch for screw " +
+                     "(default 0). Not used by gear. With a limit, the least (or for atMost, the most).")] double value = 0,
+        [Description("With limit between: the most (mm, or degrees for angle).")] double? value2 = null,
+        [Description("fixed (default), atLeast, atMost or between.")] string? limit = null,
+        [Description("Flip the constraint's direction (for gear and screw, which way the second turns or moves).")] bool reversed = false,
         [Description("Constraint name; omit for Type<n>.")] string? name = null,
         [Description("Gear only: the first side's share of the ratio, such as its tooth count (default 1).")] double? ratio1 = null,
         [Description("Gear only: the second side's share of the ratio (default 1).")] double? ratio2 = null,
@@ -92,11 +98,22 @@ public sealed partial class AlibreTools
             throw new McpException("ratio1 and ratio2 are only for type gear.");
         if (ratio1 is <= 0 || ratio2 is <= 0)
             throw new McpException("ratio1 and ratio2 must be greater than 0.");
-        return Call("add_assembly_constraint", new { session, type, first, second, value, reversed, name, ratio1, ratio2 }, cancel);
+        if ((string.Equals(type, "rack", StringComparison.OrdinalIgnoreCase) || string.Equals(type, "screw", StringComparison.OrdinalIgnoreCase))
+            && !(value > 0))
+            throw new McpException("rack needs value, the pinion's radius in mm; screw needs value, the pitch in mm.");
+        if (string.Equals(limit, "between", StringComparison.OrdinalIgnoreCase))
+        {
+            if (value2 is null)
+                throw new McpException("A between limit needs value (the least) and value2 (the most).");
+            if (value2 < value)
+                throw new McpException("value2 (the most) must be at least value (the least).");
+        }
+        return Call("add_assembly_constraint", new { session, type, first, second, value, value2, limit, reversed, name, ratio1, ratio2 }, cancel);
     }
 
     [McpServerTool(Name = "list_assembly_constraints", ReadOnly = true)]
-    [Description("An assembly's constraints: name, type, suppressed, errors and what each joins (and ratio1, ratio2 for gear).")]
+    [Description("An assembly's constraints: name, type, limit, suppressed, errors and what each joins, with ratio1 and " +
+                 "ratio2 for gear, pinionRadiusMm for rack, pitchMm for screw, and offsets for fastener.")]
     public Task<string> ListAssemblyConstraints([Description("The assembly; " + SessionHelp)] string? session = null,
         CancellationToken cancel = default) =>
         Call("list_assembly_constraints", new { session }, cancel);
