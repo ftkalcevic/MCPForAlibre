@@ -1,0 +1,10 @@
+<AlibreDesignAddOn specificationVersion="2" friendlyName="MCPForAlibre">
+   <Author name="Frank's Workshop" link="http://www.franksworkshop.com.au"/>
+   <DLL type="Managed" loadedWhen="Startup" location="MCPForAlibre.AddOn.dll"/>
+   <Copyright>Copyright (C) 2026 Frank's Workshop</Copyright>
+   <Icon location="MCPForAlibre.ico"/>
+   <Menu text="MCPForAlibre"/>
+   <Description>Lets Claude and other MCP clients work with Alibre Design.</Description>
+   <Workspace type="Always"/>
+   <Property name="Identifier" value="{5374DA87-716D-4EAB-ABA8-661FE072285D}"/>
+</AlibreDesignAddOn>
