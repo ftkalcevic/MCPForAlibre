@@ -1,6 +1,6 @@
 # MCPForAlibre
 
-An MCP server for Alibre Design 27.0.1, so Claude and other MCP clients can read and build parts and assemblies.
+An MCP server for Alibre Design 27.0.1, so Claude and other MCP clients can read and build parts and assemblies.  Another compatibility project as I'm a bit behind in my Alibre version.
 
 It has two parts:
 
