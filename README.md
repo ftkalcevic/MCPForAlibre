@@ -1,3 +1,5 @@
+![Made by AI / LLM, human reviewed](docs/made-by-ai.png)
+
 # MCPForAlibre
 
 An MCP server for Alibre Design 27.0.1, so Claude and other MCP clients can read and build parts and assemblies.
